@@ -1,0 +1,763 @@
+---
+title: "quantium_Task_1"
+author: "Rajesh Dhungna"
+date: "2025-01-06"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+install.packages("dplyr")
+install.packages("tidyverse")
+install.packages("readxl")
+install.packages("data.table")
+install.packages("ggplot2")
+install.packages("ggmosaic")
+install.packages("readr")
+
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(data.table)
+library(ggplot2)
+library(ggmosaic)
+library(readr)
+```
+
+
+```{r}
+transaction <- read_excel("transaction_data.xlsx")
+```
+
+```{r}
+customer <- read.csv("purchase_behaviour.csv")
+```
+
+Exploratory Data Analysis
+
+Lets deep dive into transaction data
+```{r}
+#Shape of transaction data
+dim(transaction)
+```
+```{r}
+#structure of transaction data
+str(transaction)
+```
+
+```{r}
+#First 5 rows of transaction data
+head(transaction)
+```
+
+```{r}
+# Checking for any missing values
+any(is.na(transaction))
+```
+```{r}
+#Data type of Date column
+class(transaction$DATE)
+```
+
+```{r}
+#changing Date column to date type
+transaction$DATE <- as.Date(transaction$DATE, origin = "1899-12-10")
+```
+
+
+```{r}
+#Rechecking the data type of Date
+class(transaction$DATE)
+```
+
+Lets focus into PROD_NAME and get some insights
+
+```{r}
+#Checking the summary of PROD_NAME
+summary(transaction$PROD_NAME)
+
+```
+It doesn't give us much information about the PROD_NAME, so lets try other way.
+
+
+
+```{r}
+#Listing the unique values with number of occurrence
+#table(transaction$PROD_NAME)
+```
+
+
+Lets organize above result to understand the data more clearly.
+
+```{r}
+#Grouping frequently occurring words and arranging them in descending order
+freq_words <- transaction %>% group_by(PROD_NAME)%>% summarize(count = n()) %>%
+arrange(desc(count))
+```
+
+
+```{r}
+freq_words
+```
+
+
+Since we are interested in the word chip or chips, lets split the product name into the individual words and count the frequency of occurrence of each words 
+
+
+
+```{r}
+#Creating dictionary words table
+productWords <- data.table(unlist(strsplit(unique(transaction$PROD_NAME), " ")))
+```
+
+
+```{r}
+#Changing column name to words
+setnames(productWords, 'words')
+```
+
+
+```{r}
+#productWords
+```
+
+Lets remove any digits and special characters from the words. We will utilize regular expression for this task.
+
+```{r}
+#Removing digits and white space using regular expression
+productWords <- productWords[grepl("^[a-zA-Z]+$", words)]
+```
+
+
+Further, lets arrange these words in descending order of their frequency
+
+```{r}
+#Generating word frequency and sorting in descending order
+productWords <- productWords %>%
+  group_by(words) %>%
+  summarise(frequency = n(), .groups = 'drop') %>%
+  arrange(desc(frequency))
+```
+
+
+Lets see the result
+```{r}
+productWords
+```
+
+
+
+
+```{r}
+#Changing our transaction data frame into table
+transaction <- data.table(transaction)
+```
+
+Lets get rid of word like salsa from our transaction data
+
+```{r}
+#Removing salsa product from transaction data
+transaction[, SALSA := grepl("salsa", tolower(PROD_NAME))]
+transaction <- transaction[SALSA == FALSE, ][, SALSA := NULL]
+```
+
+Checking the summary of our transaction data
+
+```{r}
+#Stastistical values of columns
+summary(transaction)
+```
+From above summary we can see that 200 items of Doritos Corn Chip     Supreme 380g was bought by same customer. We will investigate the]is transaction to see if its is outlier or regular transaction.
+
+```{r}
+#Lets organize our transaction data to see possible outliers
+transaction[order(-PROD_QTY),]
+```
+
+
+
+
+```{r}
+#Lets filter our transaction data to see the transaction of particular customer
+trans_outlier <- transaction[transaction$LYLTY_CARD_NBR == 226000,]
+
+```
+
+
+```{r}
+#Lets check our result
+trans_outlier
+```
+
+We can see that this customer has had only 2 transaction in a year. This might be for commercial purpose, hence we will remove this transaction for further analysis.
+
+```{r}
+#Removing rows with following LYLTY_CARD_NBR
+transaction <- subset(transaction,LYLTY_CARD_NBR != 226000)
+```
+
+
+```{r}
+#Checking the result
+transaction
+```
+
+Lets organize our data by transaction date 
+
+```{r}
+#Lets create a table with two columns date and frequency 
+transactionDate <- transaction %>%
+  group_by(DATE) %>%
+  summarise(frequency = n(), .groups = 'drop')
+```
+
+```{r}
+#Lets see the result in descending order of frequency
+transactionDate[order(-transactionDate$frequency),]
+```
+
+```{r}
+#Creating a date chart starting from 1 Jul 2018 to 30 Jun 2019
+dateChart <- data.table(
+  DATE = seq(from = as.Date("2018-07-01"), 
+             to = as.Date("2019-06-30"), 
+             by = "day")
+)
+```
+
+```{r}
+#dateChart
+```
+
+```{r}
+#Lets join two tables transactionDate and dateChart to see the missing transaction date
+
+missingtrans_Date <- merge.data.table(dateChart, transactionDate, by= "DATE", all.x = TRUE)
+missingtrans_Date
+```
+
+Visualizing the transaction trend over date
+
+```{r}
+#Setting plot themes to format graphs
+theme_set(theme_bw())
+theme_update(plot.title = element_text(hjust = 0.5))
+```
+
+```{r fig.width = 10, fig.align = "center"}
+# Plot transactions over time
+ggplot(missingtrans_Date, aes(x = DATE, y = frequency)) +
+geom_line() +
+labs(x = "Day", y = "Number of transactions", title = "Transactions over time") +
+scale_x_date(breaks = "1 month") +
+theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+```
+
+From this visualization we can see that there is increase in sales in the month of December but the graph breaks during the late December.
+Lets zoom into the month of December to see the sales trends.
+
+```{r}
+#Lets filter our table for transaction that occurred in December only.
+
+trans_dec <- subset(missingtrans_Date, DATE >= "2018-12-01" & DATE < "2019-01-01")
+trans_dec
+```
+
+```{r fig.width = 10, fig.align = "center"}
+#Lets visualize the result
+ggplot(trans_dec, aes(x = DATE, y = frequency)) +
+geom_line() +
+labs(x = "Day", y = "Number of transactions", title = "Transactions on December 2018") +
+scale_x_date(breaks = "1 day") +
+theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+```
+From the above graph we can see that there was no any transaction on 5 Dec 2018. There is no specific reason for this to happen. May be the data for this date is missing due to technical reason. So, we will remove transaction for this date. Further, we see fluctuating sales trend from 10 to 17 Dec and 22 to 25 Dec.   
+
+
+Creating a pack size from transaction data
+
+```{r}
+#Creating a data table named PACK_SIZE from transaction data
+transaction[, PACK_SIZE := parse_number(PROD_NAME)]
+```
+
+```{r}
+#Lets Check our result
+transaction
+```
+
+Lets organize our result by sorting transaction as per pack size and number of transactions per pack size
+
+```{r}
+packSizeFre <- transaction[, .N, PACK_SIZE][order(PACK_SIZE)]
+packSizeFre
+```
+Lets visualize above result using a histogram showing the number of transaction by pack size
+
+
+```{r fig.width = 10, fig.align = "center"}
+barplot(
+  packSizeFre$N,
+  names.arg = packSizeFre$PACK_SIZE,
+  main = "Number of Transactions by Pack Size",
+  xlab = "Pack Size",
+  ylab = "Number of Transactions",
+  col = "skyblue",
+  border = "black"
+)
+```
+
+From the above histogram we can see that the highest number of transaction was for the chip with size of 175 gram. 
+
+Now lets see which chips brand has the highest transactions.Looking into the PROD_NAME we can see that the first word is brand name. So lets extract first words from PROD_NAME
+```{r}
+#Creating a colum BRAD in transaction data
+transaction[, BRAND := word(PROD_NAME,1)]
+
+```
+
+
+Lets investigate further into Brands
+```{r}
+#Creating a frequency count of each brands
+transBrand <- transaction[, .N, BRAND][order(-N)]
+transBrand
+```
+As per the instruction brand like RED abd RRD are similar. So lets rename one of them and see the result again
+```{r}
+transaction[BRAND == "Red", BRAND := "RRD"]
+```
+
+```{r}
+transBrand <- transaction[, .N, BRAND][order(-N)]
+transBrand
+```
+
+We can see that Kettle is a top selling brand with 41288 transactions. 
+
+
+```{r}
+transaction
+
+```
+
+
+Now that we are happy with our transaction data. We will dip dive into the customer data.
+
+```{r}
+#Lets check the structure of customer data
+str(customer)
+```
+
+```{r}
+#Lets see first 5 rows
+head(customer)
+```
+
+```{r}
+#Lets convert customer data frame into data tables
+customer <- data.table(customer)
+```
+
+Lets see the frequency of category of PREMIUM_CUSTOMER 
+
+```{r}
+customer[, .N, "PREMIUM_CUSTOMER"][order(-N)]
+```
+
+Similarly, lets see the frequency of LIFESTAGE of customer 
+
+```{r}
+customer[, .N, LIFESTAGE][order(-N)]
+```
+
+
+
+```{r}
+#Dimension of customer data
+dim(customer)
+```
+
+
+Since LYLTY_CARD_NBR is our unique value in table. We will see how much unique values are there in both transaction and customer table
+
+```{r}
+#Unique LYLTY_CARD_NBR in transaction
+count(distinct(transaction, LYLTY_CARD_NBR))
+```
+
+```{r}
+#Unique LYLTY_CARD_NBR in transaction
+count(distinct(customer, LYLTY_CARD_NBR))
+```
+
+We will merge our trnsaction data with customer data for further analysis.
+
+
+```{r}
+#Merging transaction data to customer data
+data <- merge(transaction, customer, all.x = TRUE)
+```
+
+```{r}
+head(data)
+```
+
+
+Lets check for any na values in data set
+
+```{r}
+sum(is.na(data))
+```
+
+```{r}
+#Lets check for any duplicates values in the data set
+sum(duplicated(data))
+```
+We can see that we have one duplicate row in our data. Lets find out the values.
+
+```{r}
+which(duplicated(data))
+```
+
+```{r}
+#Converting our data into data tables
+data <- data.table(data)
+```
+
+
+
+Lets see the duplicated row
+```{r}
+data[99028,]
+```
+Lets see all duplicated values with following LYLTY_CARD_NBR
+
+```{r}
+data[duplicated(data) | duplicated(data, fromLast = TRUE)]
+```
+We have identified that the above entries are duplicate values. Hence we will remove one of them.
+
+```{r}
+data <- distinct(data)
+```
+
+Lets verify our result
+```{r}
+which(duplicated(data))
+```
+Now that we have completed our data exploration part, lets save this data as CSV.
+
+```{r}
+write.csv(data, file = "QVI_data.csv", row.names = FALSE)
+```
+
+
+Analysis on Customer Segment
+
+
+Total Sales by Lifestage and Premium Customer
+
+```{r}
+#Grouping customer by Lifestage and Premium Customer
+grouped_Cus <- data %>% group_by(LIFESTAGE,PREMIUM_CUSTOMER)
+grouped_Cus
+```
+Now lets calculate the total sales for each customer segment
+
+```{r}
+#Total sales per segement and arranging in descending order
+grouped_Sales <- grouped_Cus %>% summarise(Total_Sales = sum(TOT_SALES)) %>% arrange(desc(Total_Sales))
+grouped_Sales
+```
+
+Now that we have identified total sales for each customer segments. Lets find out the top spending group
+```{r}
+high_Spd_Grp <- grouped_Sales %>% slice(1) %>% arrange(desc(Total_Sales))
+high_Spd_Grp
+```
+
+
+
+Lets see these result in visualization
+
+```{r fig.width = 10, fig.align = "center"}
+ggplot(high_Spd_Grp, aes(x = LIFESTAGE, y = Total_Sales, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Total Sales by LIFESTAGE and PREMIUM_CUSTOMER",
+    x = "Lifestage",
+    y = "Total Sales"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.title = element_text(size = 10),
+    legend.position = "bottom")
+```
+
+We can see that that the highest spending customer segment are Older Families- Budget, Young Singles/Couples - Mainstream, and Retirees - Mainstream.  
+
+Total Customer in each segments
+
+```{r}
+#Number of Customer by segment
+grouped_Count <- grouped_Cus %>% summarise(Grp_Count = n_distinct(LYLTY_CARD_NBR)) %>% arrange(desc(Grp_Count))
+grouped_Count
+```
+
+
+Lets plot our result
+
+```{r fig.width = 10, fig.align = "center"}
+ggplot(grouped_Count, aes(x = LIFESTAGE, y = Grp_Count, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Customer count by LIFESTAGE and PREMIUM_CUSTOMER",
+    x = "Lifestage",
+    y = "Group Count"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.title = element_text(size = 10),
+    legend.position = "bottom")
+```
+
+
+There are more Mainstream customers in  both Retirees and Single/Couples segments.
+
+Number of Chips bought per customer by segment
+```{r}
+#Average unit per customer 
+Avg_Unit_per_Cus <- grouped_Cus %>% summarise(Total_Units = sum(PROD_QTY),                    Unique_Cus =  n_distinct(LYLTY_CARD_NBR),
+Avg_Unit = Total_Units / Unique_Cus
+) %>% arrange(desc(Avg_Unit))
+Avg_Unit_per_Cus
+```
+Lets plot our result
+```{r fig.width = 10, fig.align = "center"}
+#Average Unit per Customer
+ggplot(Avg_Unit_per_Cus, aes(x = LIFESTAGE, y = Avg_Unit, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Average Unit per Customer Segment",
+    x = "Lifestage",
+    y = "Average Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.title = element_text(size = 10),
+    legend.position = "bottom")
+```
+
+The above result shows that Older Families and Young Families buy more chips per customer in these customer segements.
+
+
+Average price per unit by Customer Segments
+```{r}
+#Average price per unit by customer segement
+Avg_Price_per_Cus <- grouped_Cus %>% summarise(Total_Units = sum(PROD_QTY),                 Total_Sales = sum(TOT_SALES),
+Avg_Price = Total_Sales/ Total_Units
+) %>% arrange(desc(Avg_Price))
+Avg_Price_per_Cus
+```
+Lets Plot this result
+```{r fig.width = 10, fig.align = "center"}
+#Average price per unit 
+ggplot(Avg_Price_per_Cus, aes(x = LIFESTAGE, y = Avg_Price, fill = PREMIUM_CUSTOMER)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Average Price per Customer Segment",
+    x = "Lifestage",
+    y = "Average Price Per Unit"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.title = element_text(size = 10),
+    legend.position = "bottom")
+```
+
+From the above result we can see that the average price per customer segment is almost similar for each segment. But Mainstream- Midage and Young singles and couples spends more on buying the chips than Budget and Premium counter part.
+
+So, lets figure this out through t-test method. 
+
+Before moving into the t-test, lets calculate the mean of Lifestage Midage Single/Couple for both  Mainstream, and Premium and Budget Segment
+
+```{r}
+#Average_Price for midage- mainstream customers
+
+midage_mainstream <- Avg_Price_per_Cus %>% filter(LIFESTAGE == "MIDAGE SINGLES/COUPLES" & PREMIUM_CUSTOMER == "Mainstream") %>% pull(Avg_Price)
+midage_mainstream
+```
+
+```{r}
+#Average Price for Midage- Premium, Budget customers
+midage_premium_budget <- Avg_Price_per_Cus %>% filter(LIFESTAGE == "MIDAGE SINGLES/COUPLES" & PREMIUM_CUSTOMER %in% c("Premium","Budget")) %>% pull(Avg_Price)
+midage_premium_budget
+```
+Lets perform t-test
+
+```{r}
+t_test_midage <- t.test(midage_mainstream,midage_premium_budget, var.equal = TRUE)
+print(t_test_midage)
+```
+From the above t-test the p-value is 0.06519 which is greater than 0.05, so we fail to reject null hypothesis and we don't have enough evidence to conclude a significant mean difference between Midage - Mainstream and Midage - Premium_budget segment. Also, the confidence interval contain 0 which further support the difference in mean is not statistically significant. 
+
+In simple term, there is no statistical evidence of Mainstream - Midage ,and Young singles and couples spending more on buying the chips than Budget and Premium counter part.
+
+t-test for Young- Mainstream , and Premium, Budget Customers
+
+```{r}
+#Average_Price for young- mainstream customers
+
+young_mainstream <- Avg_Price_per_Cus %>% filter(LIFESTAGE == "YOUNG SINGLES/COUPLES" & PREMIUM_CUSTOMER == "Mainstream") %>% pull(Avg_Price)
+young_mainstream
+
+```
+
+```{r}
+#Average_Price for young- premium and budget customers
+
+young_premium_budget <- Avg_Price_per_Cus %>% filter(LIFESTAGE == "YOUNG SINGLES/COUPLES" & PREMIUM_CUSTOMER %in% c("Premium", "Budget")) %>% pull(Avg_Price)
+young_premium_budget
+```
+
+Lets perform t-test on above mean
+
+```{r}
+t_test_young <- t.test(young_mainstream, young_premium_budget, var.equal = TRUE)
+print(t_test_young)
+```
+
+From the above result we can see that the p-value is 0.01087 which is less than 0.05, hence we reject the null hypothesis. Also, the confidence interval doesn't contain 0 which further supports this claim.
+
+In simple term, Young- Mainstream customers segments spend more on buying chips than Young- Premium and Budget counter part.   
+
+
+Now lets deep dive into young- mainstream customer segment.
+
+Lets see if this customer segment has any preference for specific brands.
+
+```{r}
+#Filter data for Young- Mainstream customer segments
+filtered_data <- data %>%
+  filter(LIFESTAGE == "YOUNG SINGLES/COUPLES" & PREMIUM_CUSTOMER == "Mainstream")
+filtered_data
+```
+
+
+
+install.packages("arules")
+install.packages("arulesViz")
+
+
+
+```{r}
+library(arules)
+library(arulesViz)
+```
+
+
+First lets convert our data for Young-Mainstream customer segment into transactions 
+```{r}
+#Converting data into tansaction for market basket analysis
+brand_trans <- as(split(filtered_data$BRAND, filtered_data$LYLTY_CARD_NBR), "transactions")
+brand_trans
+```
+```{r}
+#Checking first 5 transactions
+head(as(brand_trans, "list"), 5)
+```
+
+
+
+```{r}
+#Lets apply apriori algorithm in our brand transaction
+rules <- apriori(brand_trans, parameter = list(supp = 0.001, conf = 0.3, target = "rules"))
+```
+
+```{r}
+# Lets inspect top 10 rules by lift
+inspect(sort(rules, by = "lift")[1:10])
+```
+
+
+
+
+Lets select rules with some significant brands 
+
+```{r}
+top_rules <- subset(rules, lift >10)
+```
+
+```{r}
+inspect(sort(top_rules, by = "lift"))
+```
+
+
+
+
+```{r fig.align = "center"}
+# Visualize rules
+plot(top_rules, method = "grouped") 
+```
+
+```{r fig.align = "center"}
+# Example: Graph-based Visualization
+plot(top_rules, method = "graph", control = list(type = "items"))
+
+```
+
+```{r}
+inspect(sort(rules, by = "count")[1:10])
+```
+
+
+
+Analysis
+From our analysis we can see that rule 1 {Doritos, RRD,Tostitos}   => {CCs} has highest lift of 14.07 meaning these brands have strong association or if customer bought Doritos, RDD and Tostitos they are more likely to buy CCs. 
+
+For this customer segment Pringles and Kettle are the most preferred brand which appeared in 724 transactions.
+
+
+
+
+Chips Size Analysis
+First lets group our data according to pack size and calculate the total sales and average quantity for each pack size
+
+```{r}
+packsize_sales <- filtered_data %>%
+  group_by(PACK_SIZE) %>%
+  summarise(
+    Total_Sales = sum(TOT_SALES, na.rm = TRUE),
+    Avg_Quantity = mean(PROD_QTY, na.rm = TRUE),
+    Transaction_Count = n() 
+  ) 
+packsize_sales
+```
+
+Lets visualize this result
+
+```{r fig.align = "center"}
+#Total sales by pack size
+ggplot(packsize_sales, aes(x = factor(PACK_SIZE), y = Total_Sales)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Total Sales by Pack Size", x = "Pack Size", y = "Total Sales") +
+  theme_minimal()
+```
+
+From the above analysis we can see that for Young-Mainstream customers pack size of 175g is mostly preferred. Also, they buy smaller pack size more often rather than bigger ones. 
+
+
+
+
+
+
+
